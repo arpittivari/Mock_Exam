@@ -8,7 +8,8 @@ import {
   Trash2,
   Menu,
   Download,
-  Upload
+  Upload,
+  Calculator
 } from 'lucide-react';
 
 /* --- Types --- */
@@ -74,6 +75,47 @@ const EXAM_CONFIGS: Record<string, ExamConfig> = {
 };
 
 /* --- Sample Data --- */
+const GATE_SAMPLE_JSON = {
+  "examType": "GATE",
+  "questions": [
+    {
+      "id": 1,
+      "type": "NAT",
+      "topic": "Engineering Mathematics - Calculus",
+      "questionText": "Find the limit as x approaches 0 of (sin x)/x.",
+      "correctAnswer": "1",
+      "positiveMarks": 1,
+      "negativeMarks": 0
+    },
+    {
+      "id": 2,
+      "type": "MSQ",
+      "topic": "Computer Science - Operating Systems",
+      "questionText": "Which of the following are valid CPU scheduling algorithms?",
+      "options": ["FCFS", "Round Robin", "Bogo Sort", "SJF"],
+      "correctAnswers": ["FCFS", "Round Robin", "SJF"],
+      "positiveMarks": 2,
+      "negativeMarks": 0
+    }
+  ]
+};
+
+const SSC_SAMPLE_JSON = {
+  "examType": "SSC_CGL",
+  "questions": [
+    {
+      "id": 1,
+      "type": "MCQ",
+      "topic": "Quantitative Aptitude - Algebra",
+      "questionText": "If x + 1/x = 5, find x^2 + 1/x^2.",
+      "options": ["23", "25", "27", "21"],
+      "correctAnswer": "23",
+      "positiveMarks": 2,
+      "negativeMarks": 0.50
+    }
+  ]
+};
+
 const SAMPLE_TEST: TestData = {
   title: "GATE CS Mock Test - Sample",
   durationMinutes: 180,
@@ -86,7 +128,7 @@ const SAMPLE_TEST: TestData = {
 };
 
 export default function GateSimulator() {
-  const [mode, setMode] = useState<'home' | 'creator' | 'exam' | 'result'>('home');
+  const [mode, setMode] = useState<'home' | 'creator' | 'instructions' | 'exam' | 'result'>('home');
   const [testData, setTestData] = useState<TestData>(SAMPLE_TEST);
   const [selectedExamId, setSelectedExamId] = useState<string>('GATE');
   const [currentQIndex, setCurrentQIndex] = useState(0);
@@ -95,6 +137,9 @@ export default function GateSimulator() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiReport, setAiReport] = useState<{ strengths: string[]; weaknesses: string[]; timeManagement: string; actionPlan: string } | null>(null);
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [instructionsChecked, setInstructionsChecked] = useState(false);
+  const [calcInput, setCalcInput] = useState("");
 
   /* --- Timer --- */
   useEffect(() => {
@@ -195,7 +240,6 @@ export default function GateSimulator() {
       const resp = responses[q.id];
       const isAttempted = resp?.answered || (resp?.selectedOption != null && resp?.selectedOption !== '' && (!(Array.isArray(resp.selectedOption)) || (resp.selectedOption as string[]).length > 0));
       const timeSpentSeconds = resp?.timeSpentSeconds || 0;
-      const isAttempted = resp?.answered;
       let isCorrect = false; let marksEarned = 0;
       if (isAttempted) {
         attempted++;
@@ -222,7 +266,6 @@ export default function GateSimulator() {
         }
       }
       score += marksEarned;
-feature/exam-simulator-14925999176135679868
       return { ...q, userAnswer: resp?.selectedOption, isCorrect, marksEarned, isAttempted, timeSpentSeconds };
     });
 
@@ -244,7 +287,7 @@ feature/exam-simulator-14925999176135679868
     let totalTime = 0;
 
     studentData.report.forEach((item: any) => {
-      totalTime += item.timeSpentSeconds;
+      totalTime += item.timeSpentSeconds || 0;
       if (item.topic) {
         if (item.isAttempted && item.isCorrect) strongTopics.add(item.topic);
         if (item.isAttempted && !item.isCorrect) weakTopics.add(item.topic);
@@ -260,13 +303,6 @@ feature/exam-simulator-14925999176135679868
 
     setAiReport(mockReport);
     setIsGeneratingAI(false);
-
-      return { ...q, userAnswer: resp?.selectedOption, isCorrect, marksEarned, isAttempted };
-    });
-
-    const accuracy = attempted > 0 ? (correct / attempted) * 100 : 0;
-    return { score, positiveMarks, negativeMarks, attempted, accuracy, correct, wrong, report };
-
   };
 
   /* --- Views --- */
@@ -310,7 +346,6 @@ feature/exam-simulator-14925999176135679868
                       const parsed: JsonData = JSON.parse(ev.target.result);
 
                       if (!selectedExamId.startsWith(parsed.examType)) {
-                      if (parsed.examType !== selectedExamId) {
                         alert(`Error: The uploaded JSON is for ${parsed.examType}, but you selected ${selectedExamId}. Please upload the correct JSON.`);
                         return;
                       }
@@ -320,14 +355,10 @@ feature/exam-simulator-14925999176135679868
                       const mappedQuestions: Question[] = parsed.questions.map(q => ({
                         id: String(q.id),
                         text: q.questionText,
-
-                        topic: q.topic,
+                        topic: (q as any).topic,
                         type: q.type,
                         options: q.options,
-                        correctAnswer: (q.correctAnswer || q.correctAnswers) as string | string[],
-                        type: q.type,
-                        options: q.options,
-                        correctAnswer: q.correctAnswer,
+                        correctAnswer: q.correctAnswer || (q as any).correctAnswers,
                         marks: q.positiveMarks,
                         negativeMarks: q.negativeMarks
                       }));
@@ -350,6 +381,23 @@ feature/exam-simulator-14925999176135679868
             </div>
           </div>
         </div>
+        <div className="grid md:grid-cols-2 gap-4 mb-6">
+          <a
+            href={`data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(GATE_SAMPLE_JSON, null, 2))}`}
+            download="sample_gate_paper.json"
+            className="flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded border border-gray-400 transition"
+          >
+            <Download size={18} className="mr-2" /> Download Sample GATE Paper
+          </a>
+          <a
+            href={`data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(SSC_SAMPLE_JSON, null, 2))}`}
+            download="sample_ssc_paper.json"
+            className="flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded border border-gray-400 transition"
+          >
+            <Download size={18} className="mr-2" /> Download Sample SSC Paper
+          </a>
+        </div>
+
         <div className="bg-gray-100 p-4 rounded-lg">
           <div className="mb-2 text-sm text-gray-500 uppercase tracking-wide font-bold">Current Loaded Test</div>
           <div className="text-lg font-bold text-gray-800">{testData.title}</div>
@@ -357,13 +405,79 @@ feature/exam-simulator-14925999176135679868
             <span className="bg-gray-200 px-2 py-0.5 rounded text-xs mr-2">{testData.questions.length} Questions</span>
             <span className="bg-gray-200 px-2 py-0.5 rounded text-xs">{testData.durationMinutes} Minutes</span>
           </div>
-          <button className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition flex items-center justify-center shadow-md" onClick={startExam}>
+          <button className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition flex items-center justify-center shadow-md" onClick={() => setMode('instructions')}>
             <Play size={20} className="mr-2" /> Start Exam Now
           </button>
         </div>
       </div>
     </div>
   );
+
+  if (mode === 'instructions') {
+    const config = EXAM_CONFIGS[selectedExamId];
+    return (
+      <div className="min-h-screen p-6 bg-gray-50 flex justify-center">
+        <div className="max-w-4xl w-full bg-white p-8 rounded-lg shadow-xl">
+          <h1 className="text-2xl font-bold text-gray-800 border-b pb-4 mb-6">General Instructions</h1>
+
+          <div className="h-[60vh] overflow-y-auto pr-4 text-gray-700 space-y-4 mb-6 text-sm">
+            <p className="font-bold text-red-600 uppercase">Please read the instructions carefully</p>
+
+            <ol className="list-decimal pl-5 space-y-3">
+              <li>Total duration of examination is <b>{config?.durationMinutes || testData.durationMinutes} minutes</b>.</li>
+              <li>The clock will be set at the server. The countdown timer in the top right corner of screen will display the remaining time available for you to complete the examination.</li>
+              <li>
+                The Question Palette displayed on the right side of screen will show the status of each question using one of the following symbols:
+                <ul className="mt-4 space-y-2 list-none pl-0">
+                  <li className="flex items-center"><div className="w-5 h-5 bg-gray-200 border rounded-sm mr-3" /> You have not visited the question yet.</li>
+                  <li className="flex items-center"><div className="w-5 h-5 bg-red-500 rounded-sm mr-3 text-white flex justify-center items-center font-bold"></div> You have not answered the question.</li>
+                  <li className="flex items-center"><div className="w-5 h-5 bg-green-500 rounded-sm mr-3 text-white flex justify-center items-center font-bold"></div> You have answered the question.</li>
+                  <li className="flex items-center"><div className="w-5 h-5 bg-purple-600 rounded-sm mr-3 text-white flex justify-center items-center font-bold"></div> You have NOT answered the question, but have marked the question for review.</li>
+                  <li className="flex items-center"><div className="w-5 h-5 bg-purple-600 rounded-sm mr-3 relative"><div className="absolute right-0 bottom-0 w-2.5 h-2.5 bg-green-400 rounded-full translate-x-1/2 translate-y-1/2" /></div> The question(s) "Answered and Marked for Review" will be considered for evaluation.</li>
+                </ul>
+              </li>
+              <li>You can click on the "&gt;" arrow which appears to the left of question palette to collapse the question palette thereby maximizing the question window.</li>
+              <li>To navigate to a question, click on the question number in the Question Palette.</li>
+              <li>To answer a question, do the following:
+                <ul className="list-disc pl-5 mt-2">
+                  <li>Click on the question number in the Question Palette to go to that question directly.</li>
+                  <li>Click on <b>Save & Next</b> to save your answer for the current question and then go to the next question.</li>
+                  <li>Click on <b>Mark for Review & Next</b> to save your answer for the current question, mark it for review, and then go to the next question.</li>
+                </ul>
+              </li>
+            </ol>
+          </div>
+
+          <div className="border-t pt-4">
+            <label className="flex items-start space-x-3 cursor-pointer p-3 bg-gray-50 rounded border hover:bg-gray-100 transition">
+              <input
+                type="checkbox"
+                className="mt-1 w-5 h-5 accent-blue-600"
+                checked={instructionsChecked}
+                onChange={(e) => setInstructionsChecked(e.target.checked)}
+              />
+              <span className="text-sm font-semibold text-gray-800">
+                I have read and understood the instructions. All computer hardware allotted to me are in proper working condition. I declare that I am not in possession of / not wearing / not carrying any prohibited gadget like mobile phone, bluetooth devices etc.
+              </span>
+            </label>
+
+            <div className="mt-6 flex justify-between">
+              <button className="px-6 py-2 border border-gray-400 text-gray-700 font-bold rounded hover:bg-gray-100 transition" onClick={() => setMode('home')}>
+                Cancel
+              </button>
+              <button
+                className={`px-8 py-2 font-bold rounded shadow transition ${instructionsChecked ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                disabled={!instructionsChecked}
+                onClick={startExam}
+              >
+                I am ready to begin
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (mode === 'creator') return (
     <div className="min-h-screen p-6 bg-gray-50">
@@ -418,6 +532,15 @@ feature/exam-simulator-14925999176135679868
       <header className="bg-white px-4 py-2 flex justify-between items-center border-b shadow-sm z-10">
         <div className="font-bold text-lg text-gray-800">GATE Exam Simulator</div>
         <div className="flex items-center space-x-4">
+          {testData.examType === 'GATE' && (
+            <button
+              className="p-2 text-blue-600 hover:bg-blue-50 rounded transition flex items-center shadow-sm border border-blue-200"
+              onClick={() => setIsCalculatorOpen(!isCalculatorOpen)}
+              title="Virtual Calculator"
+            >
+              <Calculator size={20} />
+            </button>
+          )}
           <div className="bg-gray-900 text-white px-4 py-1.5 rounded flex items-center shadow-inner">
             <Clock size={16} className="mr-2 text-yellow-400" />
             <span className="font-mono text-lg tracking-wider">{formatTime(timeLeft)}</span>
@@ -425,6 +548,47 @@ feature/exam-simulator-14925999176135679868
           <button className="md:hidden p-2 text-gray-600" onClick={() => setSidebarOpen(s => !s)}><Menu /></button>
         </div>
       </header>
+
+      {isCalculatorOpen && (
+        <div className="absolute top-16 right-4 md:right-80 bg-white border border-gray-300 shadow-2xl rounded-lg z-50 w-72 flex flex-col overflow-hidden">
+          <div className="bg-blue-800 text-white px-3 py-2 text-sm font-bold flex justify-between items-center">
+            Virtual Calculator
+            <button onClick={() => setIsCalculatorOpen(false)} className="text-white hover:text-red-300">✕</button>
+          </div>
+          <div className="p-3 bg-gray-100">
+            <div className="bg-white border border-gray-300 p-2 text-right text-xl font-mono min-h-[40px] break-all rounded shadow-inner">
+              {calcInput || "0"}
+            </div>
+            <div className="grid grid-cols-4 gap-2 mt-3">
+              {['7','8','9','/'].map(c => <button key={c} onClick={() => setCalcInput(p => p+c)} className="bg-white border rounded p-2 font-bold hover:bg-gray-50">{c}</button>)}
+              {['4','5','6','*'].map(c => <button key={c} onClick={() => setCalcInput(p => p+c)} className="bg-white border rounded p-2 font-bold hover:bg-gray-50">{c}</button>)}
+              {['1','2','3','-'].map(c => <button key={c} onClick={() => setCalcInput(p => p+c)} className="bg-white border rounded p-2 font-bold hover:bg-gray-50">{c}</button>)}
+              {['0','.','C','+'].map(c =>
+                <button
+                  key={c}
+                  onClick={() => c === 'C' ? setCalcInput('') : setCalcInput(p => p+c)}
+                  className={`bg-white border rounded p-2 font-bold hover:bg-gray-50 ${c==='C' ? 'text-red-600' : ''}`}
+                >
+                  {c}
+                </button>
+              )}
+              <button
+                className="col-span-4 bg-blue-600 text-white border rounded p-2 font-bold hover:bg-blue-700 mt-1"
+                onClick={() => {
+                  try {
+                    // Using a simple Function constructor to evaluate safely-ish (still better than eval)
+                    setCalcInput(String(new Function('return ' + calcInput)()));
+                  } catch {
+                    setCalcInput('Error');
+                  }
+                }}
+              >
+                =
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden relative">
         <main className="flex-1 flex flex-col h-full overflow-hidden">

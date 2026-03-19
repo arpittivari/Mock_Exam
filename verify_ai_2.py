@@ -14,6 +14,11 @@ def test_app():
             page.get_by_text("Start Exam Now").click()
             page.wait_for_timeout(1000)
 
+            page.get_by_role("checkbox").check()
+            page.wait_for_timeout(500)
+            page.get_by_role("button", name="I am ready to begin").click()
+            page.wait_for_timeout(1000)
+
             # Incorrect answer this time to test negative marking
             page.get_by_text("The window size is always fixed.").click()
             page.wait_for_timeout(500)

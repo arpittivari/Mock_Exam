@@ -4,6 +4,4 @@ import GateSimulator from './components/GateSimulator'
 export default function App() {
   return <GateSimulator />
 }
-
-    ``
   

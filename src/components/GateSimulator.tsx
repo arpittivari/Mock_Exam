@@ -14,6 +14,21 @@ import {
 /* --- Types --- */
 type QuestionType = 'MCQ' | 'MSQ' | 'NAT';
 
+interface JsonQuestion {
+  id: number | string;
+  type: QuestionType;
+  questionText: string;
+  options?: string[];
+  correctAnswer: string | string[];
+  positiveMarks: number;
+  negativeMarks: number;
+}
+
+interface JsonData {
+  examType: string;
+  questions: JsonQuestion[];
+}
+
 interface Question {
   id: string;
   text: string;
@@ -35,12 +50,32 @@ interface TestData {
   title: string;
   durationMinutes: number;
   questions: Question[];
+  examType: string;
 }
+
+interface ExamConfig {
+  id: string;
+  name: string;
+  durationMinutes: number;
+  totalQuestions: number;
+  maxMarks: number;
+}
+
+const EXAM_CONFIGS: Record<string, ExamConfig> = {
+  GATE: { id: 'GATE', name: 'GATE', durationMinutes: 180, totalQuestions: 65, maxMarks: 100 },
+  ESE_PRELIMS_PAPER_1: { id: 'ESE_PRELIMS_PAPER_1', name: 'ESE Prelims Paper 1', durationMinutes: 120, totalQuestions: 100, maxMarks: 200 },
+  ESE_PRELIMS_PAPER_2: { id: 'ESE_PRELIMS_PAPER_2', name: 'ESE Prelims Paper 2', durationMinutes: 180, totalQuestions: 150, maxMarks: 300 },
+  SSC_CGL_TIER_1: { id: 'SSC_CGL_TIER_1', name: 'SSC CGL Tier 1', durationMinutes: 60, totalQuestions: 100, maxMarks: 200 },
+  SSC_CGL_TIER_2: { id: 'SSC_CGL_TIER_2', name: 'SSC CGL Tier 2', durationMinutes: 135, totalQuestions: 150, maxMarks: 450 },
+  SSC_CHSL_TIER_1: { id: 'SSC_CHSL_TIER_1', name: 'SSC CHSL Tier 1', durationMinutes: 60, totalQuestions: 100, maxMarks: 200 },
+  SSC_CHSL_TIER_2: { id: 'SSC_CHSL_TIER_2', name: 'SSC CHSL Tier 2', durationMinutes: 135, totalQuestions: 135, maxMarks: 405 },
+};
 
 /* --- Sample Data --- */
 const SAMPLE_TEST: TestData = {
   title: "GATE CS Mock Test - Sample",
   durationMinutes: 180,
+  examType: "GATE",
   questions: [
     { id: "q1", text: "Which of the following is TRUE for a standard TCP connection?", type: "MCQ", options: ["Sequence numbers are synonymous with packet numbers.", "It provides full-duplex service.", "The window size is always fixed.", "It does not support flow control."], correctAnswer: "It provides full-duplex service.", marks: 1, negativeMarks: 0.33 },
     { id: "q2", text: "Consider the matrix A with Eigenvalues 2, 4, and 6. What is the determinant of A?", type: "NAT", correctAnswer: "48", marks: 2, negativeMarks: 0 },
@@ -51,6 +86,7 @@ const SAMPLE_TEST: TestData = {
 export default function GateSimulator() {
   const [mode, setMode] = useState<'home' | 'creator' | 'exam' | 'result'>('home');
   const [testData, setTestData] = useState<TestData>(SAMPLE_TEST);
+  const [selectedExamId, setSelectedExamId] = useState<string>('GATE');
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [responses, setResponses] = useState<Record<string, QuestionStatus>>({});
   const [timeLeft, setTimeLeft] = useState(0);
@@ -93,7 +129,7 @@ export default function GateSimulator() {
 
   const handleSaveNext = () => {
     const isAns = currentStatus.selectedOption !== null && currentStatus.selectedOption !== '' && (!(Array.isArray(currentStatus.selectedOption)) || (currentStatus.selectedOption as string[]).length > 0);
-    updateStatus({ answered: isAns, visited: true });
+    updateStatus({ answered: isAns, markedForReview: false, visited: true });
     if (currentQIndex < testData.questions.length - 1) changeQuestion(currentQIndex + 1);
   };
 
@@ -103,7 +139,11 @@ export default function GateSimulator() {
     if (currentQIndex < testData.questions.length - 1) changeQuestion(currentQIndex + 1);
   };
 
-  const handleClearResponse = () => updateStatus({ selectedOption: null, answered: false });
+  const handleClearResponse = () => updateStatus({ selectedOption: null, answered: false, markedForReview: false });
+
+  const handlePrevious = () => {
+    if (currentQIndex > 0) changeQuestion(currentQIndex - 1);
+  };
 
   const changeQuestion = (index: number) => {
     setResponses(prev => {
@@ -133,9 +173,10 @@ export default function GateSimulator() {
 
   const computeResult = () => {
     let score = 0, attempted = 0, correct = 0, wrong = 0;
+    let positiveMarks = 0, negativeMarks = 0;
     const report = testData.questions.map(q => {
       const resp = responses[q.id];
-      const isAttempted = resp?.answered || (resp?.selectedOption != null && resp?.selectedOption !== '');
+      const isAttempted = resp?.answered;
       let isCorrect = false; let marksEarned = 0;
       if (isAttempted) {
         attempted++;
@@ -148,19 +189,40 @@ export default function GateSimulator() {
           const correctArr = (q.correctAnswer as string[])?.sort().join(',') || '';
           if (userArr === correctArr) { isCorrect = true; marksEarned = q.marks; }
         }
-        if (isCorrect) correct++;
+        if (isCorrect) {
+          correct++;
+          positiveMarks += marksEarned;
+        } else {
+          negativeMarks += Math.abs(marksEarned);
+        }
       }
       score += marksEarned;
-      return { ...q, userAnswer: resp?.selectedOption, isCorrect, marksEarned };
+      return { ...q, userAnswer: resp?.selectedOption, isCorrect, marksEarned, isAttempted };
     });
-    return { score, attempted, correct, wrong, report };
+
+    const accuracy = attempted > 0 ? (correct / attempted) * 100 : 0;
+    return { score, positiveMarks, negativeMarks, attempted, accuracy, correct, wrong, report };
   };
 
   /* --- Views --- */
   if (mode === 'home') return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
       <div className="bg-white p-8 rounded-lg shadow-xl max-w-2xl w-full">
-        <h1 className="text-3xl font-extrabold text-blue-900 mb-6 text-center">GATE Exam Simulator</h1>
+        <h1 className="text-3xl font-extrabold text-blue-900 mb-6 text-center">Exam Simulator</h1>
+
+        <div className="mb-6 p-4 border rounded-lg bg-gray-50 shadow-sm">
+          <label className="block text-gray-700 font-bold mb-2">Select Target Exam</label>
+          <select
+            className="w-full p-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+            value={selectedExamId}
+            onChange={(e) => setSelectedExamId(e.target.value)}
+          >
+            {Object.values(EXAM_CONFIGS).map(exam => (
+              <option key={exam.id} value={exam.id}>{exam.name} ({exam.durationMinutes} Mins | {exam.totalQuestions} Qs)</option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           <div className="p-6 border-2 border-dashed border-blue-200 rounded-lg cursor-pointer hover:bg-blue-50 transition" onClick={() => setMode('creator')}>
             <div className="flex flex-col items-center">
@@ -179,7 +241,37 @@ export default function GateSimulator() {
                 if (file) {
                   const reader = new FileReader();
                   reader.onload = (ev: any) => {
-                    try { setTestData(JSON.parse(ev.target.result)); alert('Test Loaded Successfully!'); } catch { alert('Invalid JSON File'); }
+                    try {
+                      const parsed: JsonData = JSON.parse(ev.target.result);
+
+                      if (parsed.examType !== selectedExamId) {
+                        alert(`Error: The uploaded JSON is for ${parsed.examType}, but you selected ${selectedExamId}. Please upload the correct JSON.`);
+                        return;
+                      }
+
+                      const config = EXAM_CONFIGS[selectedExamId];
+
+                      const mappedQuestions: Question[] = parsed.questions.map(q => ({
+                        id: String(q.id),
+                        text: q.questionText,
+                        type: q.type,
+                        options: q.options,
+                        correctAnswer: q.correctAnswer,
+                        marks: q.positiveMarks,
+                        negativeMarks: q.negativeMarks
+                      }));
+
+                      setTestData({
+                        title: `${config.name} Mock Test`,
+                        durationMinutes: config.durationMinutes,
+                        questions: mappedQuestions,
+                        examType: parsed.examType
+                      });
+
+                      alert('Test Loaded Successfully!');
+                    } catch {
+                      alert('Invalid JSON File Structure');
+                    }
                   };
                   reader.readAsText(file);
                 }
@@ -316,6 +408,7 @@ export default function GateSimulator() {
             <div className="flex space-x-2">
               <button className="px-4 py-2 bg-purple-600 text-white text-sm font-semibold rounded hover:bg-purple-700 transition" onClick={handleMarkReview}>Mark for Review & Next</button>
               <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded hover:bg-gray-50 transition" onClick={handleClearResponse}>Clear Response</button>
+              <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded hover:bg-gray-50 transition" onClick={handlePrevious} disabled={currentQIndex === 0}>Previous</button>
             </div>
             <button className="px-6 py-2 bg-blue-600 text-white text-sm font-bold rounded flex items-center hover:bg-blue-700 transition shadow-sm" onClick={handleSaveNext}>
               Save & Next <ChevronRight size={18} className="ml-1" />
@@ -336,22 +429,27 @@ export default function GateSimulator() {
               <div className="flex items-center"><div className="w-3 h-3 bg-green-500 rounded-sm mr-1.5" /> Answered</div>
               <div className="flex items-center"><div className="w-3 h-3 bg-red-500 rounded-sm mr-1.5" /> Not Answered</div>
               <div className="flex items-center"><div className="w-3 h-3 bg-gray-200 rounded-sm mr-1.5 border" /> Not Visited</div>
-              <div className="flex items-center"><div className="w-3 h-3 bg-purple-600 rounded-sm mr-1.5" /> Review</div>
+              <div className="flex items-center"><div className="w-3 h-3 bg-purple-600 rounded-sm mr-1.5" /> Marked for Review</div>
+              <div className="flex items-center col-span-2 mt-1 relative"><div className="w-3 h-3 bg-purple-600 rounded-sm mr-1.5 relative"><div className="absolute right-0 bottom-0 w-1.5 h-1.5 bg-green-400 rounded-full translate-x-1/2 translate-y-1/2" /></div> Answered & Marked for Review</div>
             </div>
           </div>
 
           <div className="p-2 overflow-y-auto flex-1 bg-white/50">
             <h3 className="font-bold text-gray-700 mb-2 px-2 text-sm uppercase">Question Palette</h3>
             <div className="grid grid-cols-4 gap-2 px-2">
-              {testData.questions.map((q, idx) => (
-                <button
-                  key={q.id}
-                  onClick={() => changeQuestion(idx)}
-                  className={`h-9 w-full rounded flex items-center justify-center text-sm font-bold border transition-all ${getPaletteColor(q.id)} ${currentQIndex === idx ? 'ring-2 ring-blue-500 ring-offset-1 z-10' : ''}`}
-                >
-                  {idx + 1}
-                </button>
-              ))}
+              {testData.questions.map((q, idx) => {
+                const isAnsAndRev = responses[q.id]?.markedForReview && responses[q.id]?.answered;
+                return (
+                  <button
+                    key={q.id}
+                    onClick={() => changeQuestion(idx)}
+                    className={`relative h-9 w-full rounded flex items-center justify-center text-sm font-bold border transition-all ${getPaletteColor(q.id)} ${currentQIndex === idx ? 'ring-2 ring-blue-500 ring-offset-1 z-10' : ''}`}
+                  >
+                    {idx + 1}
+                    {isAnsAndRev && <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-green-400 rounded-full border border-white" />}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -366,7 +464,7 @@ export default function GateSimulator() {
   );
 
   if (mode === 'result') {
-    const { score, attempted, correct, wrong, report } = computeResult();
+    const { score, positiveMarks, negativeMarks, attempted, accuracy, correct, wrong, report } = computeResult();
     return (
       <div className="min-h-screen bg-gray-100 p-8 flex justify-center">
         <div className="max-w-5xl w-full bg-white rounded-lg shadow-xl overflow-hidden flex flex-col">
@@ -375,41 +473,45 @@ export default function GateSimulator() {
             <div className="text-blue-200 text-lg">{testData.title}</div>
           </div>
           <div className="p-8 flex-1 overflow-y-auto">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-6 mb-10">
               <div className="bg-blue-50 p-6 rounded-lg text-center border border-blue-100">
                 <div className="text-4xl font-extrabold text-blue-700 mb-1">{score.toFixed(2)}</div>
-                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Total Score</div>
-              </div>
-              <div className="bg-gray-50 p-6 rounded-lg text-center border border-gray-200">
-                <div className="text-4xl font-extrabold text-gray-700 mb-1">{testData.questions.length}</div>
-                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Total Questions</div>
+                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Total Marks</div>
               </div>
               <div className="bg-green-50 p-6 rounded-lg text-center border border-green-100">
-                <div className="text-4xl font-extrabold text-green-700 mb-1">{correct}</div>
-                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Correct</div>
+                <div className="text-4xl font-extrabold text-green-700 mb-1">+{positiveMarks.toFixed(2)}</div>
+                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Positive Marks</div>
               </div>
               <div className="bg-red-50 p-6 rounded-lg text-center border border-red-100">
-                <div className="text-4xl font-extrabold text-red-700 mb-1">{wrong}</div>
-                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Wrong</div>
+                <div className="text-4xl font-extrabold text-red-700 mb-1">-{negativeMarks.toFixed(2)}</div>
+                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Negative Marks</div>
+              </div>
+              <div className="bg-gray-50 p-6 rounded-lg text-center border border-gray-200">
+                <div className="text-4xl font-extrabold text-gray-700 mb-1">{attempted}</div>
+                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Attempted</div>
+              </div>
+              <div className="bg-purple-50 p-6 rounded-lg text-center border border-purple-200">
+                <div className="text-4xl font-extrabold text-purple-700 mb-1">{accuracy.toFixed(1)}%</div>
+                <div className="text-xs text-gray-500 uppercase font-bold tracking-wider">Accuracy</div>
               </div>
             </div>
 
             <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Detailed Analysis</h2>
             <div className="space-y-4">
               {report.map((item, idx) => (
-                <div key={item.id} className={`border rounded-lg p-5 ${item.isCorrect ? 'border-green-200 bg-green-50/20' : 'border-red-200 bg-red-50/20'}`}>
+                <div key={item.id} className={`border rounded-lg p-5 ${!item.isAttempted ? 'border-gray-200 bg-gray-50' : item.isCorrect ? 'border-green-200 bg-green-50/20' : 'border-red-200 bg-red-50/20'}`}>
                   <div className="flex justify-between items-start mb-3">
                     <span className="font-bold text-gray-700">Q{idx + 1}. <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded ml-1 text-gray-600">{item.type}</span></span>
-                    <span className={`font-bold px-2 py-1 rounded text-sm ${item.marksEarned >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {item.marksEarned > 0 ? '+' : ''}{item.marksEarned.toFixed(2)} Marks
+                    <span className={`font-bold px-2 py-1 rounded text-sm ${!item.isAttempted ? 'bg-gray-200 text-gray-700' : item.marksEarned >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {item.isAttempted ? (item.marksEarned > 0 ? '+' : '') + item.marksEarned.toFixed(2) + ' Marks' : 'Not Attempted'}
                     </span>
                   </div>
                   <p className="mb-4 text-gray-800">{item.text}</p>
                   <div className="grid md:grid-cols-2 gap-4 text-sm bg-white p-3 rounded border border-gray-100">
                     <div>
                       <span className="font-semibold block text-gray-500 mb-1">Your Answer:</span>
-                      <div className={`font-medium ${item.userAnswer ? 'text-gray-900' : 'text-gray-400 italic'}`}>
-                        {item.userAnswer ? (Array.isArray(item.userAnswer) ? item.userAnswer.join(', ') : item.userAnswer) : 'Not Attempted'}
+                      <div className={`font-medium ${item.isAttempted && item.userAnswer ? 'text-gray-900' : 'text-gray-400 italic'}`}>
+                        {item.isAttempted && item.userAnswer ? (Array.isArray(item.userAnswer) ? item.userAnswer.join(', ') : item.userAnswer) : 'Not Attempted'}
                       </div>
                     </div>
                     <div>

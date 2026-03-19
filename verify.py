@@ -17,6 +17,11 @@ def test_app():
             page.get_by_text("Start Exam Now").click()
             page.wait_for_timeout(1000)
 
+            page.get_by_role("checkbox").check()
+            page.wait_for_timeout(500)
+            page.get_by_role("button", name="I am ready to begin").click()
+            page.wait_for_timeout(1000)
+
             # 3. Answer Question 1 (MCQ) - Correct Answer is 'It provides full-duplex service.'
             page.get_by_text("It provides full-duplex service.").click()
             page.wait_for_timeout(500)

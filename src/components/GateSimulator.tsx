@@ -17,11 +17,9 @@ type QuestionType = 'MCQ' | 'MSQ' | 'NAT';
 interface JsonQuestion {
   id: number | string;
   type: QuestionType;
-  topic?: string;
   questionText: string;
   options?: string[];
-  correctAnswer?: string | string[];
-  correctAnswers?: string | string[];
+  correctAnswer: string | string[];
   positiveMarks: number;
   negativeMarks: number;
 }
@@ -197,6 +195,7 @@ export default function GateSimulator() {
       const resp = responses[q.id];
       const isAttempted = resp?.answered || (resp?.selectedOption != null && resp?.selectedOption !== '' && (!(Array.isArray(resp.selectedOption)) || (resp.selectedOption as string[]).length > 0));
       const timeSpentSeconds = resp?.timeSpentSeconds || 0;
+      const isAttempted = resp?.answered;
       let isCorrect = false; let marksEarned = 0;
       if (isAttempted) {
         attempted++;
@@ -223,6 +222,7 @@ export default function GateSimulator() {
         }
       }
       score += marksEarned;
+feature/exam-simulator-14925999176135679868
       return { ...q, userAnswer: resp?.selectedOption, isCorrect, marksEarned, isAttempted, timeSpentSeconds };
     });
 
@@ -260,6 +260,13 @@ export default function GateSimulator() {
 
     setAiReport(mockReport);
     setIsGeneratingAI(false);
+
+      return { ...q, userAnswer: resp?.selectedOption, isCorrect, marksEarned, isAttempted };
+    });
+
+    const accuracy = attempted > 0 ? (correct / attempted) * 100 : 0;
+    return { score, positiveMarks, negativeMarks, attempted, accuracy, correct, wrong, report };
+
   };
 
   /* --- Views --- */
@@ -303,6 +310,7 @@ export default function GateSimulator() {
                       const parsed: JsonData = JSON.parse(ev.target.result);
 
                       if (!selectedExamId.startsWith(parsed.examType)) {
+                      if (parsed.examType !== selectedExamId) {
                         alert(`Error: The uploaded JSON is for ${parsed.examType}, but you selected ${selectedExamId}. Please upload the correct JSON.`);
                         return;
                       }
@@ -312,10 +320,14 @@ export default function GateSimulator() {
                       const mappedQuestions: Question[] = parsed.questions.map(q => ({
                         id: String(q.id),
                         text: q.questionText,
+
                         topic: q.topic,
                         type: q.type,
                         options: q.options,
                         correctAnswer: (q.correctAnswer || q.correctAnswers) as string | string[],
+                        type: q.type,
+                        options: q.options,
+                        correctAnswer: q.correctAnswer,
                         marks: q.positiveMarks,
                         negativeMarks: q.negativeMarks
                       }));

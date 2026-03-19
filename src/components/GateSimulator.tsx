@@ -32,6 +32,7 @@ interface JsonData {
 interface Question {
   id: string;
   text: string;
+  topic?: string;
   type: QuestionType;
   options?: string[];
   correctAnswer: string | string[];
@@ -44,6 +45,7 @@ interface QuestionStatus {
   answered: boolean;
   markedForReview: boolean;
   selectedOption: string | string[] | null;
+  timeSpentSeconds: number;
 }
 
 interface TestData {
@@ -91,21 +93,36 @@ export default function GateSimulator() {
   const [responses, setResponses] = useState<Record<string, QuestionStatus>>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [aiReport, setAiReport] = useState<{ strengths: string[]; weaknesses: string[]; timeManagement: string; actionPlan: string } | null>(null);
 
   /* --- Timer --- */
   useEffect(() => {
     let t: number;
     if (mode === 'exam' && timeLeft > 0) {
-      t = window.setInterval(() => setTimeLeft(p => p <= 1 ? (setMode('result'), 0) : p - 1), 1000);
+      t = window.setInterval(() => {
+        setTimeLeft(p => p <= 1 ? (setMode('result'), 0) : p - 1);
+        setResponses(prev => {
+          const qId = testData.questions[currentQIndex]?.id;
+          if (!qId) return prev;
+          return {
+            ...prev,
+            [qId]: {
+              ...prev[qId],
+              timeSpentSeconds: (prev[qId]?.timeSpentSeconds || 0) + 1
+            }
+          };
+        });
+      }, 1000);
     }
     return () => clearInterval(t);
-  }, [mode, timeLeft]);
+  }, [mode, timeLeft, currentQIndex, testData.questions]);
 
   /* --- Actions --- */
   const startExam = () => {
     setTimeLeft(testData.durationMinutes * 60);
     const ir: Record<string, QuestionStatus> = {};
-    testData.questions.forEach(q => ir[q.id] = { visited: false, answered: false, markedForReview: false, selectedOption: null });
+    testData.questions.forEach(q => ir[q.id] = { visited: false, answered: false, markedForReview: false, selectedOption: null, timeSpentSeconds: 0 });
     if (testData.questions.length > 0) ir[testData.questions[0].id].visited = true;
     setResponses(ir);
     setCurrentQIndex(0);
@@ -114,7 +131,7 @@ export default function GateSimulator() {
   };
 
   const currentQ = testData.questions[currentQIndex];
-  const currentStatus = responses[currentQ?.id] || { visited: false, answered: false, markedForReview: false, selectedOption: null };
+  const currentStatus = responses[currentQ?.id] || { visited: false, answered: false, markedForReview: false, selectedOption: null, timeSpentSeconds: 0 };
 
   const updateStatus = (updates: Partial<QuestionStatus>) => setResponses(prev => ({ ...prev, [currentQ.id]: { ...prev[currentQ.id], ...updates } }));
 
@@ -176,6 +193,8 @@ export default function GateSimulator() {
     let positiveMarks = 0, negativeMarks = 0;
     const report = testData.questions.map(q => {
       const resp = responses[q.id];
+      const isAttempted = resp?.answered || (resp?.selectedOption != null && resp?.selectedOption !== '' && (!(Array.isArray(resp.selectedOption)) || (resp.selectedOption as string[]).length > 0));
+      const timeSpentSeconds = resp?.timeSpentSeconds || 0;
       const isAttempted = resp?.answered;
       let isCorrect = false; let marksEarned = 0;
       if (isAttempted) {
@@ -183,7 +202,13 @@ export default function GateSimulator() {
         if (q.type === 'NAT') {
           if (String(resp.selectedOption).trim() === String(q.correctAnswer).trim()) { isCorrect = true; marksEarned = q.marks; }
         } else if (q.type === 'MCQ') {
-          if (resp.selectedOption === q.correctAnswer) { isCorrect = true; marksEarned = q.marks; } else { marksEarned = -q.negativeMarks; wrong++; }
+          if (resp.selectedOption === q.correctAnswer) {
+            isCorrect = true;
+            marksEarned = q.marks;
+          } else {
+            marksEarned = -q.negativeMarks;
+            wrong++;
+          }
         } else if (q.type === 'MSQ') {
           const userArr = (resp.selectedOption as string[])?.sort().join(',') || '';
           const correctArr = (q.correctAnswer as string[])?.sort().join(',') || '';
@@ -197,11 +222,51 @@ export default function GateSimulator() {
         }
       }
       score += marksEarned;
+feature/exam-simulator-14925999176135679868
+      return { ...q, userAnswer: resp?.selectedOption, isCorrect, marksEarned, isAttempted, timeSpentSeconds };
+    });
+
+    const accuracy = attempted > 0 ? (correct / attempted) * 100 : 0;
+    return { score, positiveMarks, negativeMarks, attempted, accuracy, correct, wrong, report };
+  };
+
+  const generateAIReport = async (studentData: any) => {
+    setIsGeneratingAI(true);
+    // In a real app, you would securely call your backend, which then calls:
+    // const response = await fetch('https://api.openai.com/v1/chat/completions', { ... })
+    // OR Google Gemini API.
+    // Here we simulate a 2-second mock generation.
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const weakTopics = new Set<string>();
+    const strongTopics = new Set<string>();
+    let totalTime = 0;
+
+    studentData.report.forEach((item: any) => {
+      totalTime += item.timeSpentSeconds;
+      if (item.topic) {
+        if (item.isAttempted && item.isCorrect) strongTopics.add(item.topic);
+        if (item.isAttempted && !item.isCorrect) weakTopics.add(item.topic);
+      }
+    });
+
+    const mockReport = {
+      strengths: strongTopics.size > 0 ? Array.from(strongTopics) : ["Foundations look solid but need more data."],
+      weaknesses: weakTopics.size > 0 ? Array.from(weakTopics) : ["No specific weaknesses identified yet."],
+      timeManagement: `You spent an average of ${totalTime > 0 && studentData.attempted > 0 ? Math.round(totalTime / studentData.attempted) : 0} seconds per attempted question. Ensure you aren't lingering too long on difficult questions.`,
+      actionPlan: "Focus on your weaker topics by practicing more MSQ and NAT types. Review the foundational concepts for any negative-marked questions."
+    };
+
+    setAiReport(mockReport);
+    setIsGeneratingAI(false);
+
       return { ...q, userAnswer: resp?.selectedOption, isCorrect, marksEarned, isAttempted };
     });
 
     const accuracy = attempted > 0 ? (correct / attempted) * 100 : 0;
     return { score, positiveMarks, negativeMarks, attempted, accuracy, correct, wrong, report };
+
   };
 
   /* --- Views --- */
@@ -244,6 +309,7 @@ export default function GateSimulator() {
                     try {
                       const parsed: JsonData = JSON.parse(ev.target.result);
 
+                      if (!selectedExamId.startsWith(parsed.examType)) {
                       if (parsed.examType !== selectedExamId) {
                         alert(`Error: The uploaded JSON is for ${parsed.examType}, but you selected ${selectedExamId}. Please upload the correct JSON.`);
                         return;
@@ -254,6 +320,11 @@ export default function GateSimulator() {
                       const mappedQuestions: Question[] = parsed.questions.map(q => ({
                         id: String(q.id),
                         text: q.questionText,
+
+                        topic: q.topic,
+                        type: q.type,
+                        options: q.options,
+                        correctAnswer: (q.correctAnswer || q.correctAnswers) as string | string[],
                         type: q.type,
                         options: q.options,
                         correctAnswer: q.correctAnswer,
@@ -524,8 +595,62 @@ export default function GateSimulator() {
                 </div>
               ))}
             </div>
+            <div className="mt-8 border-t pt-8">
+              {!aiReport && !isGeneratingAI && (
+                <div className="text-center">
+                  <button
+                    onClick={() => generateAIReport({ score, positiveMarks, negativeMarks, attempted, accuracy, correct, wrong, report })}
+                    className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-lg hover:from-purple-700 hover:to-indigo-700 transition shadow-xl text-lg flex items-center justify-center mx-auto"
+                  >
+                    Generate AI Performance Analysis
+                  </button>
+                </div>
+              )}
+
+              {isGeneratingAI && (
+                <div className="flex flex-col items-center justify-center py-10 space-y-4">
+                  <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                  <div className="text-indigo-600 font-semibold animate-pulse">AI is analyzing your performance...</div>
+                </div>
+              )}
+
+              {aiReport && (
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-8 rounded-xl border border-indigo-100 shadow-md">
+                  <h3 className="text-2xl font-bold text-indigo-900 mb-6 flex items-center">
+                    <span className="bg-indigo-600 text-white w-8 h-8 flex items-center justify-center rounded-lg mr-3 text-sm">AI</span>
+                    Performance Insights
+                  </h3>
+
+                  <div className="grid md:grid-cols-2 gap-6 mb-6">
+                    <div className="bg-white p-5 rounded-lg border border-green-100 shadow-sm">
+                      <h4 className="font-bold text-green-700 mb-2 uppercase text-sm tracking-wider">Top Strengths</h4>
+                      <ul className="list-disc pl-5 text-gray-700 space-y-1">
+                        {aiReport.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </div>
+                    <div className="bg-white p-5 rounded-lg border border-red-100 shadow-sm">
+                      <h4 className="font-bold text-red-700 mb-2 uppercase text-sm tracking-wider">Learning Gaps</h4>
+                      <ul className="list-disc pl-5 text-gray-700 space-y-1">
+                        {aiReport.weaknesses.map((w, i) => <li key={i}>{w}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-lg border border-yellow-100 shadow-sm mb-6">
+                    <h4 className="font-bold text-yellow-700 mb-2 uppercase text-sm tracking-wider">Time Management</h4>
+                    <p className="text-gray-700">{aiReport.timeManagement}</p>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-lg border border-blue-100 shadow-sm">
+                    <h4 className="font-bold text-blue-700 mb-2 uppercase text-sm tracking-wider">Action Plan</h4>
+                    <p className="text-gray-700 font-medium">{aiReport.actionPlan}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="mt-10 flex justify-end">
-              <button className="px-8 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition shadow-lg" onClick={() => setMode('home')}>
+              <button className="px-8 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700 transition shadow-lg" onClick={() => { setMode('home'); setAiReport(null); setIsGeneratingAI(false); }}>
                 Back to Home
               </button>
             </div>
